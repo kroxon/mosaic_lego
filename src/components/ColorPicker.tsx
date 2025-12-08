@@ -1,12 +1,13 @@
 import { LEGO_COLORS, COLOR_CATEGORIES } from '../data/legoColors';
 
 interface ColorPickerProps {
-  selectedColor: string;
-  selectedColorName: string;
-  onColorSelect: (color: string, name: string) => void;
+  selectedColorId: number;
+  onColorSelect: (colorId: number) => void;
 }
 
-export const ColorPicker = ({ selectedColor, selectedColorName, onColorSelect }: ColorPickerProps) => {
+export const ColorPicker = ({ selectedColorId, onColorSelect }: ColorPickerProps) => {
+  const selectedColor = LEGO_COLORS.find(c => c.id === selectedColorId);
+
   return (
     <div className="space-y-4">
       <label className="block text-sm font-semibold text-gray-700">Kolor</label>
@@ -19,11 +20,11 @@ export const ColorPicker = ({ selectedColor, selectedColorName, onColorSelect }:
           <div className="flex flex-wrap gap-2">
             {LEGO_COLORS.filter((c) => c.category === category).map((color) => (
               <button
-                key={color.hex}
+                key={color.id}
                 type="button"
-                onClick={() => onColorSelect(color.hex, color.name)}
+                onClick={() => onColorSelect(color.id)}
                 className={`group relative w-10 h-10 rounded-lg transition-all duration-200 hover:scale-110 hover:shadow-lg ${
-                  selectedColor === color.hex
+                  selectedColorId === color.id
                     ? 'ring-3 ring-blue-500 ring-offset-2 scale-105'
                     : 'ring-1 ring-gray-300'
                 }`}
@@ -39,9 +40,9 @@ export const ColorPicker = ({ selectedColor, selectedColorName, onColorSelect }:
         </div>
       ))}
 
-      {selectedColorName && (
+      {selectedColor && (
         <div className="mt-2 text-sm text-gray-600">
-          Wybrany kolor: <span className="font-semibold">{selectedColorName}</span>
+          Wybrany kolor: <span className="font-semibold">{selectedColor.name}</span>
         </div>
       )}
     </div>

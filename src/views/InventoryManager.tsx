@@ -5,26 +5,20 @@ import { ShapePicker } from '../components/ShapePicker';
 import { ColorPicker } from '../components/ColorPicker';
 import { QuantityInput } from '../components/QuantityInput';
 import { BrickList } from '../components/BrickList';
+import { BrickDimensions } from '../types';
 
 export const InventoryManager = () => {
-  const { bricks, addBrick, updateBrick, deleteBrick, setCurrentView } = useInventory();
+  const { inventory, addToInventory, updateQuantity, removeFromInventory, setCurrentView } = useInventory();
 
-  const [selectedShape, setSelectedShape] = useState('1x1');
-  const [selectedColor, setSelectedColor] = useState('#0055BF');
-  const [selectedColorName, setSelectedColorName] = useState('Blue');
+  const [selectedDimensions, setSelectedDimensions] = useState<BrickDimensions>({ width: 1, height: 1 });
+  const [selectedColorId, setSelectedColorId] = useState<number>(7); // Default Blue
   const [quantity, setQuantity] = useState(100);
 
-  const handleColorSelect = (color: string, name: string) => {
-    setSelectedColor(color);
-    setSelectedColorName(name);
-  };
-
   const handleAddBrick = () => {
-    addBrick({
-      shape: selectedShape,
-      color: selectedColor,
-      colorName: selectedColorName,
-      count: quantity,
+    addToInventory({
+      colorId: selectedColorId,
+      dimensions: selectedDimensions,
+      quantity: quantity,
     });
     setQuantity(100);
   };
@@ -50,12 +44,11 @@ export const InventoryManager = () => {
               </h2>
 
               <div className="space-y-6">
-                <ShapePicker selectedShape={selectedShape} onShapeSelect={setSelectedShape} />
+                <ShapePicker selectedDimensions={selectedDimensions} onShapeSelect={setSelectedDimensions} />
 
                 <ColorPicker
-                  selectedColor={selectedColor}
-                  selectedColorName={selectedColorName}
-                  onColorSelect={handleColorSelect}
+                  selectedColorId={selectedColorId}
+                  onColorSelect={setSelectedColorId}
                 />
 
                 <QuantityInput value={quantity} onChange={setQuantity} />
@@ -75,20 +68,20 @@ export const InventoryManager = () => {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-gray-900">Twoja kolekcja</h2>
                 <span className="px-4 py-2 bg-blue-100 text-blue-700 font-semibold rounded-full">
-                  {bricks.length} {bricks.length === 1 ? 'typ' : 'typy'}
+                  {inventory.length} {inventory.length === 1 ? 'typ' : 'typy'}
                 </span>
               </div>
 
               <div className="max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                <BrickList bricks={bricks} onUpdate={updateBrick} onDelete={deleteBrick} />
+                <BrickList inventory={inventory} onUpdate={updateQuantity} onDelete={removeFromInventory} />
               </div>
             </div>
 
             <button
               onClick={() => setCurrentView('studio')}
-              disabled={bricks.length === 0}
+              disabled={inventory.length === 0}
               className={`w-full py-4 font-bold text-lg rounded-xl transition-all duration-200 shadow-lg flex items-center justify-center gap-2 ${
-                bricks.length > 0
+                inventory.length > 0
                   ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 hover:shadow-xl transform hover:-translate-y-0.5'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}

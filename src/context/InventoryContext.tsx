@@ -1,16 +1,16 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Brick, ViewMode, GenerationMode } from '../types';
+import { InventoryItem, ViewMode, GenerationMode } from '../types';
 
 interface InventoryContextType {
-  bricks: Brick[];
+  inventory: InventoryItem[];
   currentView: ViewMode;
   mosaicWidth: number;
   mosaicHeight: number;
   generationMode: GenerationMode;
   uploadedImage: string | null;
-  addBrick: (brick: Omit<Brick, 'id'>) => void;
-  updateBrick: (id: string, count: number) => void;
-  deleteBrick: (id: string) => void;
+  addToInventory: (item: Omit<InventoryItem, 'id'>) => void;
+  updateQuantity: (id: string, quantity: number) => void;
+  removeFromInventory: (id: string) => void;
   setCurrentView: (view: ViewMode) => void;
   setMosaicWidth: (width: number) => void;
   setMosaicHeight: (height: number) => void;
@@ -29,57 +29,81 @@ export const useInventory = () => {
 };
 
 export const InventoryProvider = ({ children }: { children: ReactNode }) => {
-  const [bricks, setBricks] = useState<Brick[]>(() => {
-    const saved = localStorage.getItem('mosaic-master-bricks');
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
+    const saved = localStorage.getItem('mosaic-lego-inventory-v2');
     return saved ? JSON.parse(saved) : [];
   });
 
   const [currentView, setCurrentView] = useState<ViewMode>('inventory');
-  const [mosaicWidth, setMosaicWidth] = useState(16);
-  const [mosaicHeight, setMosaicHeight] = useState(16);
+  
+  const [mosaicWidth, setMosaicWidth] = useState(() => {
+    const saved = localStorage.getItem('mosaic-lego-width');
+    return saved ? parseInt(saved) : 48;
+  });
+  
+  const [mosaicHeight, setMosaicHeight] = useState(() => {
+    const saved = localStorage.getItem('mosaic-lego-height');
+    return saved ? parseInt(saved) : 48;
+  });
+
   const [generationMode, setGenerationMode] = useState<GenerationMode>('precise');
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('mosaic-master-bricks', JSON.stringify(bricks));
-  }, [bricks]);
+    localStorage.setItem('mosaic-lego-inventory-v2', JSON.stringify(inventory));
+  }, [inventory]);
 
-  const addBrick = (brick: Omit<Brick, 'id'>) => {
-    const existingBrick = bricks.find(
-      (b) => b.shape === brick.shape && b.color === brick.color
+  useEffect(() => {
+    localStorage.setItem('mosaic-lego-width', mosaicWidth.toString());
+  }, [mosaicWidth]);
+
+  useEffect(() => {
+    localStorage.setItem('mosaic-lego-height', mosaicHeight.toString());
+  }, [mosaicHeight]);
+
+  const addToInventory = (item: Omit<InventoryItem, 'id'>) => {
+    const existingItem = inventory.find(
+      (i) => 
+        i.colorId === item.colorId && 
+        i.dimensions.width === item.dimensions.width && 
+        i.dimensions.height === item.dimensions.height
     );
 
-    if (existingBrick) {
-      updateBrick(existingBrick.id, existingBrick.count + brick.count);
+    if (existingItem) {
+      updateQuantity(existingItem.id, existingItem.quantity + item.quantity);
     } else {
-      const newBrick: Brick = {
-        ...brick,
-        id: `${Date.now()}-${Math.random()}`,
+      const newItem: InventoryItem = {
+        ...item,
+        id: crypto.randomUUID(),
       };
-      setBricks([...bricks, newBrick]);
+      setInventory([...inventory, newItem]);
     }
   };
 
-  const updateBrick = (id: string, count: number) => {
-    setBricks(bricks.map((brick) => (brick.id === id ? { ...brick, count } : brick)));
+  const updateQuantity = (id: string, quantity: number) => {
+    if (quantity <= 0) {
+      removeFromInventory(id);
+      return;
+    }
+    setInventory(inventory.map((item) => (item.id === id ? { ...item, quantity } : item)));
   };
 
-  const deleteBrick = (id: string) => {
-    setBricks(bricks.filter((brick) => brick.id !== id));
+  const removeFromInventory = (id: string) => {
+    setInventory(inventory.filter((item) => item.id !== id));
   };
 
   return (
     <InventoryContext.Provider
       value={{
-        bricks,
+        inventory,
         currentView,
         mosaicWidth,
         mosaicHeight,
         generationMode,
         uploadedImage,
-        addBrick,
-        updateBrick,
-        deleteBrick,
+        addToInventory,
+        updateQuantity,
+        removeFromInventory,
         setCurrentView,
         setMosaicWidth,
         setMosaicHeight,

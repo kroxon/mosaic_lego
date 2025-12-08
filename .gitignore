@@ -21,3 +21,6 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Project Context for AI
+PROJECT_CONTEXT.md

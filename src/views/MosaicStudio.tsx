@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   ArrowLeft,
   Upload,
@@ -7,8 +7,15 @@ import {
   Grid3x3,
   Download,
   Loader2,
+  AlertTriangle,
+  ShoppingCart,
+  Package,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
+import { processImage, getCroppedImg } from '../utils/imageUtils';
+import { generateMosaic, MosaicResult } from '../services/mosaicGenerator';
+import { getLegoColor } from '../data/legoColors';
+import { ImageCropper, Area } from '../components/ImageCropper';
 
 export const MosaicStudio = () => {
   const {
@@ -21,19 +28,39 @@ export const MosaicStudio = () => {
     setGenerationMode,
     uploadedImage,
     setUploadedImage,
+    inventory,
   } = useInventory();
 
   const [isDragging, setIsDragging] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isCropping, setIsCropping] = useState(false);
+  const [tempImage, setTempImage] = useState<string | null>(null);
+  const [mosaicResult, setMosaicResult] = useState<MosaicResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const handleFileUpload = (file: File) => {
     if (file && file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        setUploadedImage(e.target?.result as string);
+        setTempImage(e.target?.result as string);
+        setIsCropping(true);
+        setMosaicResult(null); // Reset result on new image
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCropComplete = async (croppedAreaPixels: Area) => {
+    if (tempImage) {
+      try {
+        const croppedImage = await getCroppedImg(tempImage, croppedAreaPixels);
+        setUploadedImage(croppedImage);
+        setIsCropping(false);
+        setTempImage(null);
+      } catch (e) {
+        console.error(e);
+      }
     }
   };
 
@@ -49,14 +76,95 @@ export const MosaicStudio = () => {
     if (file) handleFileUpload(file);
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
+    if (!uploadedImage) return;
+
     setIsGenerating(true);
-    setTimeout(() => {
-      setIsGenerating(false);
-    }, 2000);
+    
+    // Allow UI to update before heavy processing
+    setTimeout(async () => {
+      try {
+        const pixels = await processImage(uploadedImage, mosaicWidth, mosaicHeight);
+        const result = generateMosaic(
+          pixels, 
+          mosaicWidth, 
+          mosaicHeight, 
+          inventory, 
+          generationMode === 'precise' // Precise = use inventory strictly
+        );
+        setMosaicResult(result);
+      } catch (error) {
+        console.error("Generation failed:", error);
+        alert("Wystąpił błąd podczas generowania mozaiki.");
+      } finally {
+        setIsGenerating(false);
+      }
+    }, 100);
   };
 
-  const gridCells = Array.from({ length: mosaicWidth * mosaicHeight });
+  // Auto-regenerate when mode changes if we already have a result
+  useEffect(() => {
+    if (mosaicResult && uploadedImage) {
+      handleGenerate();
+    }
+  }, [generationMode]);
+
+  // Render mosaic to canvas when result changes
+  useEffect(() => {
+    if (mosaicResult && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Scale for better visibility
+      const scale = Math.max(Math.floor(600 / mosaicWidth), 4); 
+      canvas.width = mosaicWidth * scale;
+      canvas.height = mosaicHeight * scale;
+
+      // Clear
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw bricks
+      mosaicResult.placedBricks.forEach(brick => {
+        ctx.fillStyle = brick.colorHex;
+        ctx.fillRect(
+          brick.x * scale, 
+          brick.y * scale, 
+          brick.width * scale, 
+          brick.height * scale
+        );
+        
+        // Draw border for individual bricks
+        ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(
+          brick.x * scale, 
+          brick.y * scale, 
+          brick.width * scale, 
+          brick.height * scale
+        );
+
+        // Draw studs (circles)
+        ctx.fillStyle = 'rgba(0,0,0,0.1)';
+        const studSize = scale * 0.6;
+        
+        for(let bx = 0; bx < brick.width; bx++) {
+            for(let by = 0; by < brick.height; by++) {
+                ctx.beginPath();
+                ctx.arc(
+                    (brick.x + bx) * scale + scale/2,
+                    (brick.y + by) * scale + scale/2,
+                    studSize / 2,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+            }
+        }
+      });
+    }
+  }, [mosaicResult, mosaicWidth, mosaicHeight]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-blue-50">
@@ -137,13 +245,23 @@ export const MosaicStudio = () => {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Szerokość: {mosaicWidth} klocków
-                  </label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-sm font-semibold text-gray-700">
+                      Szerokość (klocki)
+                    </label>
+                    <input
+                      type="number"
+                      min="4"
+                      max="256"
+                      value={mosaicWidth}
+                      onChange={(e) => setMosaicWidth(Math.max(4, Math.min(256, parseInt(e.target.value) || 4)))}
+                      className="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right"
+                    />
+                  </div>
                   <input
                     type="range"
-                    min="5"
-                    max="30"
+                    min="4"
+                    max="128"
                     value={mosaicWidth}
                     onChange={(e) => setMosaicWidth(parseInt(e.target.value))}
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
@@ -151,13 +269,23 @@ export const MosaicStudio = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Wysokość: {mosaicHeight} klocków
-                  </label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-sm font-semibold text-gray-700">
+                      Wysokość (klocki)
+                    </label>
+                    <input
+                      type="number"
+                      min="4"
+                      max="256"
+                      value={mosaicHeight}
+                      onChange={(e) => setMosaicHeight(Math.max(4, Math.min(256, parseInt(e.target.value) || 4)))}
+                      className="w-20 px-2 py-1 text-sm border border-gray-300 rounded-md text-right"
+                    />
+                  </div>
                   <input
                     type="range"
-                    min="5"
-                    max="30"
+                    min="4"
+                    max="128"
                     value={mosaicHeight}
                     onChange={(e) => setMosaicHeight(parseInt(e.target.value))}
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
@@ -175,26 +303,40 @@ export const MosaicStudio = () => {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => setGenerationMode('precise')}
-                  className={`p-4 rounded-xl border-2 transition-all ${
+                  className={`p-4 rounded-xl border-2 transition-all text-left ${
                     generationMode === 'precise'
                       ? 'border-blue-500 bg-blue-50 shadow-md'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  <Grid3x3 className="w-8 h-8 mx-auto mb-2" />
-                  <p className="font-semibold text-sm">Precyzyjny</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Package className={`w-5 h-5 ${generationMode === 'precise' ? 'text-blue-600' : 'text-gray-500'}`} />
+                    <p className={`font-bold text-sm ${generationMode === 'precise' ? 'text-blue-900' : 'text-gray-700'}`}>
+                      Dostępne Klocki
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Generuje mozaikę używając tylko tego, co masz w kolekcji.
+                  </p>
                 </button>
 
                 <button
                   onClick={() => setGenerationMode('artistic')}
-                  className={`p-4 rounded-xl border-2 transition-all ${
+                  className={`p-4 rounded-xl border-2 transition-all text-left ${
                     generationMode === 'artistic'
                       ? 'border-purple-500 bg-purple-50 shadow-md'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  <Sparkles className="w-8 h-8 mx-auto mb-2" />
-                  <p className="font-semibold text-sm">Artystyczny</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className={`w-5 h-5 ${generationMode === 'artistic' ? 'text-purple-600' : 'text-gray-500'}`} />
+                    <p className={`font-bold text-sm ${generationMode === 'artistic' ? 'text-purple-900' : 'text-gray-700'}`}>
+                      Widok Idealny
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Pokazuje najlepszy możliwy efekt bez limitu klocków.
+                  </p>
                 </button>
               </div>
             </div>
@@ -232,28 +374,100 @@ export const MosaicStudio = () => {
                 Podgląd Mozaiki
               </h2>
 
-              <div
-                className="grid gap-0.5 bg-gray-200 p-0.5 rounded-lg mx-auto"
-                style={{
-                  gridTemplateColumns: `repeat(${mosaicWidth}, minmax(0, 1fr))`,
-                  maxWidth: '100%',
-                  aspectRatio: `${mosaicWidth} / ${mosaicHeight}`,
-                }}
-              >
-                {gridCells.map((_, index) => (
-                  <div
-                    key={index}
-                    className="bg-white aspect-square rounded-sm hover:bg-gray-50 transition-colors"
-                  />
-                ))}
+              <div className="flex justify-center bg-gray-50 rounded-xl p-4 overflow-auto max-h-[600px]">
+                {mosaicResult ? (
+                  <canvas ref={canvasRef} className="shadow-lg rounded-sm" />
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+                    <Grid3x3 className="w-16 h-16 mb-4 opacity-20" />
+                    <p>Wgraj zdjęcie i kliknij "Generuj", aby zobaczyć wynik</p>
+                  </div>
+                )}
               </div>
 
-              <p className="text-center text-sm text-gray-500 mt-6">
-                {mosaicWidth} × {mosaicHeight} = {mosaicWidth * mosaicHeight} klocków
-              </p>
+              {mosaicResult && (
+                <div className="mt-6 space-y-4">
+                  <div className="flex justify-between text-sm text-gray-600 border-t pt-4">
+                    <span>Wymiary: {mosaicWidth} × {mosaicHeight}</span>
+                    <span>Użyte klocki: {mosaicResult.placedBricks.length}</span>
+                  </div>
+                  
+                  {mosaicResult.missingBricks.size > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800 flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 flex-shrink-0 text-red-600" />
+                      <div className="flex-1">
+                        <p className="font-bold text-red-900">Brakuje klocków w Twojej kolekcji!</p>
+                        <p className="mb-2">Algorytm użył zastępczych kolorów lub pustych miejsc.</p>
+                        <ul className="mt-1 list-disc list-inside text-red-700">
+                          {Array.from(mosaicResult.missingBricks.entries()).slice(0, 5).map(([colorId, count]) => {
+                             const color = getLegoColor(colorId);
+                             return (
+                               <li key={colorId}>
+                                 {color?.name || `Color ${colorId}`}: {count} szt.
+                               </li>
+                             );
+                          })}
+                          {mosaicResult.missingBricks.size > 5 && <li>...i inne</li>}
+                        </ul>
+                        <button 
+                          onClick={() => setGenerationMode('artistic')}
+                          className="mt-3 text-sm font-semibold text-red-700 underline hover:text-red-900"
+                        >
+                          Przełącz na Widok Idealny, aby zobaczyć cel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bill of Materials (BOM) */}
+                  <div className="mt-8 border-t pt-6">
+                    <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                      <ShoppingCart className="w-5 h-5" />
+                      Lista Elementów (BOM)
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                      {Array.from(mosaicResult.placedBricks.reduce((acc, brick) => {
+                        const key = `${brick.colorId}-${brick.width}x${brick.height}`;
+                        acc.set(key, (acc.get(key) || 0) + 1);
+                        return acc;
+                      }, new Map<string, number>()).entries()).map(([key, count]) => {
+                        const [colorId, dims] = key.split('-');
+                        const color = getLegoColor(parseInt(colorId));
+                        if (!color) return null;
+                        
+                        return (
+                          <div key={key} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                            <div className="flex items-center gap-3">
+                              <div 
+                                className="w-8 h-8 rounded shadow-sm" 
+                                style={{ backgroundColor: color.hex }}
+                              />
+                              <div>
+                                <p className="font-semibold text-sm text-gray-900">{color.name}</p>
+                                <p className="text-xs text-gray-500">{dims.replace('x', ' × ')}</p>
+                              </div>
+                            </div>
+                            <span className="font-bold text-gray-700">{count} szt.</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
+
+        {isCropping && tempImage && (
+          <ImageCropper
+            image={tempImage}
+            aspectRatio={mosaicWidth / mosaicHeight}
+            onCropComplete={handleCropComplete}
+            onCancel={() => setIsCropping(false)}
+          />
+        )}
       </div>
     </div>
   );
